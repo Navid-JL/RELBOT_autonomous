@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>relbot_navigation_rs</name>
+  <version>0.1.0</version>
+  <description>Rust object detection, visual servoing, autonomous navigation, and pick-and-place mission state machine for RELBot.</description>
+  <maintainer email="developer@relbot.local">RELBot Team</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cargo</buildtool_depend>
+
+  <depend>rclrs</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>relbot_interfaces</depend>
+
+  <export>
+    <build_type>ament_cargo</build_type>
+  </export>
+</package>

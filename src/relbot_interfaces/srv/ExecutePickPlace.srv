@@ -1,0 +1,9 @@
+# Service to trigger an atomic pick or place macro sequence on the C++ hardware node
+uint8 ACTION_HOME = 0
+uint8 ACTION_PICKUP = 1
+uint8 ACTION_RELEASE = 2
+
+uint8 action
+---
+bool success
+string message

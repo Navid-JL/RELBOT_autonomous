@@ -1,0 +1,5 @@
+[workspace]
+resolver = "2"
+members = [
+    "src/relbot_navigation_rs",
+]

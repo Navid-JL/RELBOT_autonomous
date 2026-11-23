@@ -1,0 +1,21 @@
+[package]
+name = "relbot_navigation_rs"
+version = "0.1.0"
+edition = "2021"
+description = "Rust object detection, visual servoing, autonomous navigation, and pick-and-place mission state machine for RELBot"
+license = "Apache-2.0"
+
+[lib]
+name = "relbot_navigation_rs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "relbot_navigation_rs"
+path = "src/main.rs"
+
+[features]
+default = []
+# Enable with `cargo build --features ros2` inside a sourced ROS 2 + r2r/rclrs workspace
+ros2 = []
+
+[dependencies]
