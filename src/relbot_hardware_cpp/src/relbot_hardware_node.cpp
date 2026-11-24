@@ -3,10 +3,10 @@
 #include <memory>
 #include <string>
 
+#include "example_interfaces/msg/float64.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "std_msgs/msg/float64.hpp"
 
 #include "relbot_hardware_cpp/manipulator_sequencer.hpp"
 #include "relbot_hardware_cpp/relbot_base_driver.hpp"
@@ -39,8 +39,8 @@ class RelbotHardwareNode : public rclcpp::Node {
                   "Serial port %s unavailable; running Microcontroller Bridge in SIMULATION mode",
                   serial_port.c_str());
     } else {
-      RCLCPP_INFO(this->get_logger(), "Connected to MCU serial bridge on %s @ %d baud",
-                  serial_port.c_str(), baud_rate);
+      RCLCPP_INFO(this->get_logger(), "Connected to MCU serial bridge on %s @ %ld baud",
+                  serial_port.c_str(), static_cast<long>(baud_rate));
     }
 
     // Subscribers from Rust autonomous navigation node
@@ -49,6 +49,8 @@ class RelbotHardwareNode : public rclcpp::Node {
         [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
           latest_linear_m_s_ = msg->linear.x;
           latest_angular_rad_s_ = msg->angular.z;
+          last_cmd_vel_time_ = this->now();
+          has_cmd_vel_ = true;
         });
 
     arm_cmd_sub_ = this->create_subscription<relbot_interfaces::msg::ArmCommand>(
@@ -64,10 +66,10 @@ class RelbotHardwareNode : public rclcpp::Node {
           mcu_bridge_->sendCommand(direct_cmd_);
         });
 
-    // Publishers to RELBot low-level motor drivers (XRF2 / FPGA setpoint topics) & Rust stack
-    left_motor_pub_ = this->create_publisher<std_msgs::msg::Float64>(
+    // Publishers to RELBot low-level motor drivers (relbot_adapter / XRF2 setpoint topics) & Rust stack
+    left_motor_pub_ = this->create_publisher<example_interfaces::msg::Float64>(
         "/input/left_motor/setpoint_vel", 10);
-    right_motor_pub_ = this->create_publisher<std_msgs::msg::Float64>(
+    right_motor_pub_ = this->create_publisher<example_interfaces::msg::Float64>(
         "/input/right_motor/setpoint_vel", 10);
     odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/odom", 10);
     manip_state_pub_ = this->create_publisher<relbot_interfaces::msg::ManipulatorState>(
@@ -103,14 +105,22 @@ class RelbotHardwareNode : public rclcpp::Node {
   void controlLoop() {
     constexpr double kDtSec = 0.02;
 
-    // 1. Convert body twist to RELBot left/right wheel angular velocities
-    const auto wheels = base_driver_->twistToWheelVelocities(latest_linear_m_s_, latest_angular_rad_s_);
+    // 1. Apply safety watchdog: stop wheels if /cmd_vel has timed out (> 0.5s)
+    double cmd_linear = latest_linear_m_s_;
+    double cmd_angular = latest_angular_rad_s_;
+    if (!has_cmd_vel_ || (this->now() - last_cmd_vel_time_).seconds() > 0.5) {
+      cmd_linear = 0.0;
+      cmd_angular = 0.0;
+    }
 
-    std_msgs::msg::Float64 left_msg;
+    // Convert body twist to RELBot left/right wheel angular velocities
+    const auto wheels = base_driver_->twistToWheelVelocities(cmd_linear, cmd_angular);
+
+    example_interfaces::msg::Float64 left_msg;
     left_msg.data = wheels.left_rad_s;
     left_motor_pub_->publish(left_msg);
 
-    std_msgs::msg::Float64 right_msg;
+    example_interfaces::msg::Float64 right_msg;
     right_msg.data = wheels.right_rad_s;
     right_motor_pub_->publish(right_msg);
 
@@ -156,13 +166,15 @@ class RelbotHardwareNode : public rclcpp::Node {
 
   double latest_linear_m_s_{0.0};
   double latest_angular_rad_s_{0.0};
+  rclcpp::Time last_cmd_vel_time_{0, 0, RCL_ROS_TIME};
+  bool has_cmd_vel_{false};
   ManipulatorCommand direct_cmd_{};
   ManipulatorTelemetry latest_telemetry_{};
 
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
   rclcpp::Subscription<relbot_interfaces::msg::ArmCommand>::SharedPtr arm_cmd_sub_;
-  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr left_motor_pub_;
-  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr right_motor_pub_;
+  rclcpp::Publisher<example_interfaces::msg::Float64>::SharedPtr left_motor_pub_;
+  rclcpp::Publisher<example_interfaces::msg::Float64>::SharedPtr right_motor_pub_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
   rclcpp::Publisher<relbot_interfaces::msg::ManipulatorState>::SharedPtr manip_state_pub_;
   rclcpp::Service<relbot_interfaces::srv::ExecutePickPlace>::SharedPtr pick_place_srv_;

@@ -8,6 +8,7 @@ license = "Apache-2.0"
 [lib]
 name = "relbot_navigation_rs"
 path = "src/lib.rs"
+crate-type = ["rlib", "staticlib"]
 
 [[bin]]
 name = "relbot_navigation_rs"

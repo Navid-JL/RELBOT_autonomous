@@ -3,9 +3,9 @@ relbot_hardware_node:
     serial_port: "/dev/ttyUSB0"
     baud_rate: 115200
     simulate_if_unavailable: true
-    wheel_radius_m: 0.050
-    track_width_m: 0.210
-    max_wheel_rad_s: 12.0
+    wheel_radius_m: 0.0505
+    track_width_m: 0.209
+    max_wheel_rad_s: 5.0
     arm_stowed_angle_rad: 0.10
     arm_pickup_angle_rad: 1.35
     arm_release_angle_rad: 1.15

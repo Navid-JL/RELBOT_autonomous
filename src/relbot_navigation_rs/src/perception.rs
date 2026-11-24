@@ -104,49 +104,136 @@ impl ObjectDetector {
             ),
         };
 
-        let mut count: usize = 0;
-        let mut sum_x: u64 = 0;
-        let mut sum_y: u64 = 0;
-        let mut min_x: u32 = width;
-        let mut max_x: u32 = 0;
-        let mut min_y: u32 = height;
-        let mut max_y: u32 = 0;
+        let w = width as usize;
+        let h = height as usize;
+        let total_px = w * h;
+        let mut mask = vec![0u8; total_px];
+        let mut any_match = false;
 
-        for y in 0..height {
-            for x in 0..width {
-                let idx = ((y * width + x) as usize) * 3;
+        for y in 0..h {
+            for x in 0..w {
+                let p_idx = y * w + x;
+                let idx = p_idx * 3;
                 let r = rgb_bytes[idx];
                 let g = rgb_bytes[idx + 1];
                 let b = rgb_bytes[idx + 2];
 
-                let (h, s, v) = rgb_to_hsv(r, g, b);
-                if h >= hsv_range.h_min
-                    && h <= hsv_range.h_max
-                    && s >= hsv_range.s_min
-                    && v >= hsv_range.v_min
-                {
-                    count += 1;
-                    sum_x += x as u64;
-                    sum_y += y as u64;
-                    if x < min_x {
-                        min_x = x;
-                    }
-                    if x > max_x {
-                        max_x = x;
-                    }
-                    if y < min_y {
-                        min_y = y;
-                    }
-                    if y > max_y {
-                        max_y = y;
-                    }
+                let (hue, s, v) = rgb_to_hsv(r, g, b);
+                let hue_ok = if hsv_range.h_min <= hsv_range.h_max {
+                    hue >= hsv_range.h_min && hue <= hsv_range.h_max
+                } else {
+                    // Wrap-around hue range (e.g., red: 345..15 deg)
+                    hue >= hsv_range.h_min || hue <= hsv_range.h_max
+                };
+                if hue_ok && s >= hsv_range.s_min && v >= hsv_range.v_min {
+                    mask[p_idx] = 1;
+                    any_match = true;
                 }
             }
         }
 
-        if count < self.config.min_blob_pixels {
+        if !any_match {
             return None;
         }
+
+        // Extract the largest 4-connected component to reject scattered background noise.
+        let mut best_count: usize = 0;
+        let mut best_sum_x: u64 = 0;
+        let mut best_sum_y: u64 = 0;
+        let mut best_min_x: u32 = width;
+        let mut best_max_x: u32 = 0;
+        let mut best_min_y: u32 = height;
+        let mut best_max_y: u32 = 0;
+
+        let mut stack: Vec<usize> = Vec::with_capacity(256);
+
+        for start_idx in 0..total_px {
+            if mask[start_idx] != 1 {
+                continue;
+            }
+            mask[start_idx] = 2; // visited
+            stack.clear();
+            stack.push(start_idx);
+
+            let mut count: usize = 0;
+            let mut sum_x: u64 = 0;
+            let mut sum_y: u64 = 0;
+            let mut min_x: u32 = width;
+            let mut max_x: u32 = 0;
+            let mut min_y: u32 = height;
+            let mut max_y: u32 = 0;
+
+            while let Some(curr) = stack.pop() {
+                let cx = (curr % w) as u32;
+                let cy = (curr / w) as u32;
+                count += 1;
+                sum_x += cx as u64;
+                sum_y += cy as u64;
+                if cx < min_x {
+                    min_x = cx;
+                }
+                if cx > max_x {
+                    max_x = cx;
+                }
+                if cy < min_y {
+                    min_y = cy;
+                }
+                if cy > max_y {
+                    max_y = cy;
+                }
+
+                if cx > 0 {
+                    let left = curr - 1;
+                    if mask[left] == 1 {
+                        mask[left] = 2;
+                        stack.push(left);
+                    }
+                }
+                if (cx as usize) + 1 < w {
+                    let right = curr + 1;
+                    if mask[right] == 1 {
+                        mask[right] = 2;
+                        stack.push(right);
+                    }
+                }
+                if cy > 0 {
+                    let up = curr - w;
+                    if mask[up] == 1 {
+                        mask[up] = 2;
+                        stack.push(up);
+                    }
+                }
+                if (cy as usize) + 1 < h {
+                    let down = curr + w;
+                    if mask[down] == 1 {
+                        mask[down] = 2;
+                        stack.push(down);
+                    }
+                }
+            }
+
+            if count > best_count {
+                best_count = count;
+                best_sum_x = sum_x;
+                best_sum_y = sum_y;
+                best_min_x = min_x;
+                best_max_x = max_x;
+                best_min_y = min_y;
+                best_max_y = max_y;
+            }
+        }
+
+        if best_count < self.config.min_blob_pixels {
+            return None;
+        }
+
+        let count = best_count;
+        let sum_x = best_sum_x;
+        let sum_y = best_sum_y;
+        let min_x = best_min_x;
+        let max_x = best_max_x;
+        let min_y = best_min_y;
+        let max_y = best_max_y;
 
         let cx_px = (sum_x as f64) / (count as f64);
         let cy_px = (sum_y as f64) / (count as f64);

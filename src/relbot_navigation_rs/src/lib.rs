@@ -1,4 +1,5 @@
 pub mod controller;
+pub mod ffi;
 pub mod perception;
 pub mod state_machine;
 pub mod types;
