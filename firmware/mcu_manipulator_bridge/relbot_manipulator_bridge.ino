@@ -47,9 +47,12 @@ constexpr int   ARM_HARD_MIN_US     = 750;
 constexpr int   ARM_HARD_MAX_US     = 2250;
 
 // --- MG996R (Pin 25) Calibration & Safety Constants ---
-constexpr int   GRIP_SAFE_MIN_US    = 1200;  // Maps to 0 deg (full speed direction A)
-constexpr int   GRIP_SAFE_CENTER_US = 1500;  // Maps to 90 deg (neutral / stop)
-constexpr int   GRIP_SAFE_MAX_US    = 1800;  // Maps to 180 deg (full speed direction B)
+// Full 500..2500 us pulse width range unlocks the MG996R's full ~250 deg mechanical travel.
+constexpr float GRIP_MIN_DEG        = 0.0f;
+constexpr float GRIP_MAX_DEG        = 250.0f;
+constexpr int   GRIP_SAFE_MIN_US    = 500;   // Maps to 0 deg
+constexpr int   GRIP_SAFE_CENTER_US = 1500;  // Maps to 125 deg (midpoint)
+constexpr int   GRIP_SAFE_MAX_US    = 2500;  // Maps to 250 deg
 
 // --- Runtime State ---
 int   armCurrentUs       = ARM_CAL_CENTER_US;
@@ -57,8 +60,8 @@ bool  armPwmActive       = true;
 
 int   gripCurrentUs      = GRIP_SAFE_CENTER_US;
 bool  gripPwmActive      = false;
-bool  gripBurstMode      = true;             // Default: auto-cut Gripper PWM after burstDurationMs
-unsigned long gripBurstDurationMs = 250;     // Default 250 ms burst window
+bool  gripBurstMode      = false;            // Default: HOLD mode so it completes 250 deg travel & holds cubes
+unsigned long gripBurstDurationMs = 900;     // 900 ms burst window when burst mode is enabled (full 250 deg sweep)
 unsigned long gripPwmStartMs      = 0;
 
 bool  rosBridgeActive    = false;            // Only stream 50 Hz $STAT when ROS $CMD is active
@@ -122,12 +125,12 @@ void relaxArm() {
 
 // --- Gripper (MG996R, Pin 25) Conversions & Control ---
 int gripAngleToPulseUs(float deg) {
-  deg = constrain(deg, 0.0f, 180.0f);
-  return static_cast<int>(roundf(GRIP_SAFE_MIN_US + (deg / 180.0f) * (GRIP_SAFE_MAX_US - GRIP_SAFE_MIN_US)));
+  deg = constrain(deg, GRIP_MIN_DEG, GRIP_MAX_DEG);
+  return static_cast<int>(roundf(GRIP_SAFE_MIN_US + (deg / GRIP_MAX_DEG) * (GRIP_SAFE_MAX_US - GRIP_SAFE_MIN_US)));
 }
 
 float gripPulseUsToAngle(int us) {
-  return (static_cast<float>(us - GRIP_SAFE_MIN_US) / (GRIP_SAFE_MAX_US - GRIP_SAFE_MIN_US)) * 180.0f;
+  return (static_cast<float>(us - GRIP_SAFE_MIN_US) / (GRIP_SAFE_MAX_US - GRIP_SAFE_MIN_US)) * GRIP_MAX_DEG;
 }
 
 void stopGripPwm(bool autoCutoff, bool quiet = false) {
@@ -175,13 +178,13 @@ void printStatus() {
 void printHelp() {
   Serial.println("\n=== RELBot ESP32 Dual-Servo Controller (Pin 26: DL3020 Arm | Pin 25: MG996R Gripper) ===");
   Serial.println("  a <deg_or_us>        : Move Arm (-65..+65 deg, or 750..2250 us), e.g. 'a 0', 'a 30', 'a -45'");
-  Serial.println("  g <deg_or_us>        : Move Gripper (0..180 deg [90=neutral], or 1200..1800 us), e.g. 'g 45', 'g 135'");
-  Serial.println("  <arm_deg> <grip_deg> : Set BOTH Arm and Gripper angles at once, e.g. '25 135' or '0, 90'");
+  Serial.println("  g <deg_or_us>        : Move Gripper (0..250 deg [125=mid], or 500..2500 us), e.g. 'g 0', 'g 245'");
+  Serial.println("  <arm_deg> <grip_deg> : Set BOTH Arm and Gripper angles at once, e.g. '25 240' or '0, 125'");
   Serial.println("  a+ / a-              : Nudge Arm pulse +10 us / -10 us");
   Serial.println("  g+ / g-              : Nudge Gripper pulse +10 us / -10 us");
-  Serial.println("  t <ms>               : Set Gripper burst duration (50..3000 ms, default 250 ms)");
-  Serial.println("  burst / hold         : Toggle Gripper auto-cutoff BURST mode vs continuous HOLD mode");
-  Serial.println("  x / stop             : Stop Gripper PWM immediately ('x all' relaxes Arm too)");
+  Serial.println("  t <ms>               : Set Gripper burst duration (50..3000 ms, default 900 ms)");
+  Serial.println("  hold / burst         : Toggle Gripper continuous HOLD mode (default) vs auto-cutoff BURST mode");
+  Serial.println("  x / stop             : Stop/relax Gripper PWM immediately ('x all' relaxes Arm too)");
   Serial.println("  s / status / help    : Show current status or this help guide");
   printStatus();
 }
@@ -212,15 +215,15 @@ bool applyArmValue(float val) {
 }
 
 bool applyGripValue(float val) {
-  if (val >= 0.0f && val <= 180.0f) {
+  if (val >= GRIP_MIN_DEG && val <= GRIP_MAX_DEG) {
     triggerGripPulseUs(gripAngleToPulseUs(val));
     return true;
   } else if (val >= GRIP_SAFE_MIN_US && val <= GRIP_SAFE_MAX_US) {
     triggerGripPulseUs(static_cast<int>(roundf(val)));
     return true;
   }
-  Serial.printf("[GRIP] Out of range (%.1f). Allowed: 0..180 deg or %d..%d us.\n",
-                val, GRIP_SAFE_MIN_US, GRIP_SAFE_MAX_US);
+  Serial.printf("[GRIP] Out of range (%.1f). Allowed: %.0f..%.0f deg or %d..%d us.\n",
+                val, GRIP_MIN_DEG, GRIP_MAX_DEG, GRIP_SAFE_MIN_US, GRIP_SAFE_MAX_US);
   return false;
 }
 
