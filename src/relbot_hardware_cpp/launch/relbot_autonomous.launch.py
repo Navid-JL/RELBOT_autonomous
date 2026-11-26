@@ -63,7 +63,7 @@ def generate_launch_description():
         output="screen",
         parameters=[
             hw_config,
-            {"serial_port": LaunchConfiguration("serial_port")},
+            {"serial_port": "/dev/null"},
         ],
     )
 
@@ -74,6 +74,7 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {
+                "esp32_serial_port": LaunchConfiguration("serial_port"),
                 "camera_source": LaunchConfiguration("camera_source"),
                 "rotate_180": LaunchConfiguration("rotate_180"),
                 "enable_motion": LaunchConfiguration("enable_motion"),

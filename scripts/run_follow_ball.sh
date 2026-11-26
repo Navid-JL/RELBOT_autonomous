@@ -118,17 +118,18 @@ if [[ "${MANUAL_MODE}" == "true" ]]; then
   python3 - << 'PYEOF'
 import sys, termios, tty, select, urllib.request, time
 
-print("\n========================================================")
-print(" RELbot Interactive Manual Teleop (--manual)")
-print("   W / Up Arrow    : Forward")
-print("   S / Down Arrow  : Backward")
-print("   A / Left Arrow  : Turn Left")
-print("   D / Right Arrow : Turn Right")
-print("   Space / F       : STOP")
-print("   M               : Toggle MANUAL <-> AUTO (Follow Ball)")
-print("   + / -           : Increase / Decrease speed")
-print("   Q or Ctrl-C     : Quit and stop motors")
-print("========================================================\n")
+print("\n================================================================")
+print(" RELbot ArUco Cube Autonomous Pick-Up & Servo Teleop (--manual)")
+print("   W / S / A / D   : Drive Forward / Back / Left / Right")
+print("   Space / F       : STOP Base")
+print("   M               : Toggle MANUAL <-> AUTO (ArUco Cube Pick-Up)")
+print("   I / K           : Raise / Lower 1-DOF Arm (+10 / -10 deg)")
+print("   U / Y / 0       : Arm to Pickup (-40 deg) / Carry (+20 deg) / 0 deg")
+print("   O / P / X       : Gripper OPEN (g 0) / CLOSE (g 180) / OFF (x)")
+print("   G / R           : Run Full PICKUP Macro (G) / RELEASE Cube (R)")
+print("   + / -           : Increase / Decrease Drive Speed")
+print("   Q or Ctrl-C     : Quit and Stop Motors")
+print("================================================================\n")
 
 tty_f = open("/dev/tty", "rb+", buffering=0)
 fd = tty_f.fileno()
@@ -189,7 +190,57 @@ try:
                 manual_active = not manual_active
                 cur_v, cur_w = 0.0, 0.0
                 send_cmd(f"mode={'manual' if manual_active else 'auto'}&v=0&w=0")
-                sys.stdout.write(f"\r[MODE] Switched to {'MANUAL' if manual_active else 'AUTO (Follow Ball)'}          ")
+                sys.stdout.write(f"\r[MODE] Switched to {'MANUAL' if manual_active else 'AUTO (ArUco Cube Pick-Up)'}          ")
+                sys.stdout.flush()
+                continue
+            elif ch in ('i', 'I'):
+                send_cmd("servo=arm_up")
+                sys.stdout.write("\r[SERVO] Arm +10 deg (SRT DL3020)                ")
+                sys.stdout.flush()
+                continue
+            elif ch in ('k', 'K'):
+                send_cmd("servo=arm_down")
+                sys.stdout.write("\r[SERVO] Arm -10 deg (SRT DL3020)                ")
+                sys.stdout.flush()
+                continue
+            elif ch in ('u', 'U'):
+                send_cmd("servo=arm_pick")
+                sys.stdout.write("\r[SERVO] Arm Lowered to Pickup (-40 deg)         ")
+                sys.stdout.flush()
+                continue
+            elif ch in ('y', 'Y'):
+                send_cmd("servo=arm_carry")
+                sys.stdout.write("\r[SERVO] Arm Raised to Carry (+20 deg)           ")
+                sys.stdout.flush()
+                continue
+            elif ch == '0':
+                send_cmd("servo=arm_zero")
+                sys.stdout.write("\r[SERVO] Arm Centered (0 deg)                    ")
+                sys.stdout.flush()
+                continue
+            elif ch in ('o', 'O'):
+                send_cmd("servo=grip_open")
+                sys.stdout.write("\r[SERVO] Gripper OPEN (g 0, 250ms burst)         ")
+                sys.stdout.flush()
+                continue
+            elif ch in ('p', 'P'):
+                send_cmd("servo=grip_close")
+                sys.stdout.write("\r[SERVO] Gripper CLOSE (g 180, 250ms burst)      ")
+                sys.stdout.flush()
+                continue
+            elif ch in ('x', 'X'):
+                send_cmd("servo=grip_stop")
+                sys.stdout.write("\r[SERVO] Gripper PWM OFF (x)                     ")
+                sys.stdout.flush()
+                continue
+            elif ch in ('g', 'G'):
+                send_cmd("macro=pickup")
+                sys.stdout.write("\r[MACRO] Executing ArUco Cube PICKUP sequence... ")
+                sys.stdout.flush()
+                continue
+            elif ch in ('r', 'R'):
+                send_cmd("macro=release")
+                sys.stdout.write("\r[MACRO] Executing ArUco Cube RELEASE sequence...")
                 sys.stdout.flush()
                 continue
             elif ch in ('+', '='):

@@ -25,9 +25,6 @@ import serial
 
 def open_serial(port: str, baud: int) -> serial.Serial:
     # Clear HUPCL first so closing /dev/ttyUSB0 never drops DTR/RTS and resets the ESP32.
-    # Also keep pyserial's default dtr=True, rts=True on open() because setting dtr=False,
-    # rts=False causes pyserial to clear DTR before RTS in two separate USB control packets,
-    # briefly creating the (DTR=0, RTS=1) state that pulses EN=LOW and resets the ESP32.
     fd = os.open(port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
     attrs = termios.tcgetattr(fd)
     attrs[2] &= ~termios.HUPCL
@@ -38,7 +35,6 @@ def open_serial(port: str, baud: int) -> serial.Serial:
     time.sleep(0.05)
     if ser.in_waiting:
         pending = ser.read(ser.in_waiting).decode("utf-8", errors="replace")
-        # If the ESP32 just reset, wait for its 300 ms ROM + Arduino boot to finish
         if "rst:0x" in pending or "ets " in pending:
             time.sleep(0.45)
             if ser.in_waiting:
@@ -73,7 +69,6 @@ def send_and_print(ser: serial.Serial, cmd: str, wait_sec: float = 0.35, allow_r
                 print(text)
                 got_response = True
 
-    # Auto-recover if ESP32 was left in ROM DOWNLOAD_BOOT after flashing
     if allow_retry and (saw_download_boot or not got_response):
         reset_to_normal_boot(ser)
         send_and_print(ser, cmd, wait_sec=wait_sec, allow_retry=False)
@@ -83,20 +78,19 @@ def interactive_loop(ser: serial.Serial) -> None:
     print("=====================================================================")
     print(" RELBot ESP32 Dual-Servo Manual Control (/dev/ttyUSB0)")
     print("   a <deg>        : Set Arm angle (-65 to +65 deg, 0 = center) or us")
-    print("   g <deg>        : Set Gripper angle (0 to 250 deg, 125 = mid) or 500..2500 us")
-    print("   <arm> <grip>   : Set BOTH at once (e.g. '25 245' or '0 125')")
+    print("   g <deg>        : Set Gripper angle (0 to 180 deg, 90 = neutral) or us")
+    print("   <arm> <grip>   : Set BOTH at once (e.g. '25 135' or '0 90')")
     print("   a+ / a-        : Nudge Arm +/- 10 us")
     print("   g+ / g-        : Nudge Gripper +/- 10 us")
-    print("   hold / burst   : Toggle Gripper continuous HOLD (default) vs timed BURST")
-    print("   t <ms>         : Set Gripper burst duration (default 900 ms)")
-    print("   x              : Relax/stop Gripper PWM ('x all' relaxes Arm too)")
+    print("   t <ms>         : Set Gripper burst duration (default 250 ms)")
+    print("   burst / hold   : Toggle Gripper burst auto-cutoff vs continuous")
+    print("   x              : Emergency stop Gripper ('x all' relaxes Arm too)")
     print("   s / help / q   : Status / Help / Quit")
     print("=====================================================================")
     send_and_print(ser, "s", wait_sec=0.25)
 
     try:
         while True:
-            # Drain any async messages (such as auto-cutoff notifications)
             while ser.in_waiting > 0:
                 line = ser.readline().decode("utf-8", errors="replace").rstrip()
                 if line and not line.startswith("$STAT,"):
@@ -106,12 +100,13 @@ def interactive_loop(ser: serial.Serial) -> None:
             if not cmd:
                 continue
             if cmd.lower() in ("q", "quit", "exit"):
+                send_and_print(ser, "x", wait_sec=0.15)
                 break
-            # Wait slightly longer if triggering a gripper burst so auto-cutoff prints cleanly
-            wait_s = 0.25
+            wait_s = 0.40 if (cmd.lower().startswith("g") or " " in cmd or "," in cmd) else 0.20
             send_and_print(ser, cmd, wait_sec=wait_s)
     except (KeyboardInterrupt, EOFError):
-        print("\nExiting (servos holding state; use 'x' or '--stop' to relax)...")
+        print("\nStopping gripper and exiting...")
+        send_and_print(ser, "x", wait_sec=0.15)
 
 
 def main() -> None:
@@ -119,7 +114,7 @@ def main() -> None:
     parser.add_argument("-p", "--port", default="/dev/ttyUSB0", help="Serial port (default: /dev/ttyUSB0)")
     parser.add_argument("-b", "--baud", type=int, default=115200, help="Baud rate (default: 115200)")
     parser.add_argument("-a", "--arm", type=float, default=None, help="Set SRT DL3020 Arm angle (-65..+65 deg) or pulse (750..2250 us)")
-    parser.add_argument("-g", "--grip", type=float, default=None, help="Set MG996R Gripper angle (0..250 deg) or pulse (500..2500 us)")
+    parser.add_argument("-g", "--grip", type=float, default=None, help="Set MG996R Gripper angle (0..180 deg) or pulse (1200..1800 us)")
     parser.add_argument("-t", "--duration", type=int, default=None, help="Set Gripper burst duration in ms (50..3000)")
     parser.add_argument("--hold", action="store_true", help="Put Gripper in continuous HOLD mode")
     parser.add_argument("--burst", action="store_true", help="Put Gripper in auto-cutoff BURST mode")
